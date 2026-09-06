@@ -49,25 +49,29 @@
     <PackageReference Include="Onova" />
     <PackageReference Include="PowerKit" />
     <PackageReference Include="ThisAssembly.Project" PrivateAssets="all" />
-    <PackageReference Include="WebView.Avalonia" />
-    <PackageReference Include="WebView.Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Controls.WebView" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../YoutubeDownloader.Core/YoutubeDownloader.Core.csproj" />
   </ItemGroup>
 
-  <!-- Avalonia.WebView is completely incompatible with trimming -->
+  <!-- WebView2 looks for the native loader next to the exe, not under runtimes/. -->
+  <Target Name="CopyWebView2Loader" AfterTargets="Build">
+    <PropertyGroup>
+      <_WebView2Loader>$(OutputPath)runtimes\win-x64\native\WebView2Loader.dll</_WebView2Loader>
+    </PropertyGroup>
+    <Copy
+      SourceFiles="$(_WebView2Loader)"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(_WebView2Loader)')"
+    />
+  </Target>
+
+  <!-- Avalonia WebView / WebView2 native assets -->
   <ItemGroup>
-    <TrimmerRootAssembly Include="Avalonia.WebView" />
-    <TrimmerRootAssembly Include="Avalonia.WebView.Desktop" />
-    <TrimmerRootAssembly Include="Avalonia.WebView.Linux" />
-    <TrimmerRootAssembly Include="Avalonia.WebView.MacCatalyst" />
-    <TrimmerRootAssembly Include="Avalonia.WebView.Windows" />
-    <TrimmerRootAssembly Include="AvaloniaWebView.Shared" />
-    <TrimmerRootAssembly Include="Linux.WebView.Core" />
+    <TrimmerRootAssembly Include="Avalonia.Controls.WebView" />
     <TrimmerRootAssembly Include="Microsoft.Web.WebView2.Core" />
-    <TrimmerRootAssembly Include="WebView.Avalonia" />
-    <TrimmerRootAssembly Include="WebView.Core" />
   </ItemGroup>
 </Project>

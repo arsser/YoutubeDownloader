@@ -1,9 +1,9 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.WebView.Windows.Core;
-using Microsoft.Web.WebView2.Core;
-using WebViewCore.Events;
+using Avalonia.Platform;
 using YoutubeDownloader.Framework;
 using YoutubeDownloader.ViewModels.Dialogs;
 
@@ -16,70 +16,135 @@ public partial class AuthSetupView : UserControl<AuthSetupViewModel>
         $"https://accounts.google.com/ServiceLogin?continue={Uri.EscapeDataString(HomePageUri.AbsoluteUri)}"
     );
 
-    private CoreWebView2? _coreWebView2;
+    private NativeWebDialog? _loginDialog;
 
-    public AuthSetupView() => InitializeComponent();
+    public AuthSetupView()
+    {
+        InitializeComponent();
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
 
-    private void NavigateToLoginPage() => WebBrowser.Url = LoginPageUri;
+    private void OnLoaded(object? sender, RoutedEventArgs args)
+    {
+        if (!DataContext.IsAuthenticated)
+            ShowLoginDialog();
+    }
 
-    private void LogOutButton_OnClick(object sender, RoutedEventArgs args)
+    private void OnUnloaded(object? sender, RoutedEventArgs args) => CloseLoginDialog();
+
+    private async void LogOutButton_OnClick(object sender, RoutedEventArgs args)
     {
         DataContext.Cookies = null;
-        NavigateToLoginPage();
+        await ClearCookiesAsync();
+        ShowLoginDialog();
     }
 
-    private void WebBrowser_OnLoaded(object sender, RoutedEventArgs args) => NavigateToLoginPage();
-
-    private void WebBrowser_OnWebViewCreated(object sender, WebViewCreatedEventArgs args)
+    private void ShowLoginDialog()
     {
-        if (!args.IsSucceed)
-            return;
+        CloseLoginDialog();
 
-        var platformWebView = WebBrowser.PlatformWebView as WebView2Core;
-        var coreWebView2 = platformWebView?.CoreWebView2;
+        var dialog = new NativeWebDialog
+        {
+            Title = "YoutubeDownloader - " + DataContext.LocalizationManager.AuthenticationTitle,
+            CanUserResize = true,
+            Source = LoginPageUri,
+        };
 
-        if (coreWebView2 is null)
-            return;
+        dialog.EnvironmentRequested += OnEnvironmentRequested;
+        dialog.NavigationStarted += OnNavigationStarted;
+        dialog.NavigationCompleted += OnNavigationCompleted;
+        dialog.Resize(960, 720);
 
-        coreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        coreWebView2.Settings.AreDevToolsEnabled = false;
-        coreWebView2.Settings.IsGeneralAutofillEnabled = false;
-        coreWebView2.Settings.IsPasswordAutosaveEnabled = false;
-        coreWebView2.Settings.IsStatusBarEnabled = false;
-        coreWebView2.Settings.IsSwipeNavigationEnabled = false;
+        _loginDialog = dialog;
 
-        _coreWebView2 = coreWebView2;
+        if (TopLevel.GetTopLevel(this) is { } owner)
+            dialog.Show(owner);
+        else
+            dialog.Show();
     }
 
-    private async void WebBrowser_OnNavigationStarting(
+    private void CloseLoginDialog()
+    {
+        if (_loginDialog is null)
+            return;
+
+        var dialog = _loginDialog;
+        _loginDialog = null;
+
+        dialog.EnvironmentRequested -= OnEnvironmentRequested;
+        dialog.NavigationStarted -= OnNavigationStarted;
+        dialog.NavigationCompleted -= OnNavigationCompleted;
+        dialog.Close();
+        dialog.Dispose();
+    }
+
+    private static void OnEnvironmentRequested(
         object? sender,
-        WebViewUrlLoadingEventArg args
+        WebViewEnvironmentRequestedEventArgs args
     )
     {
-        if (_coreWebView2 is null)
+        args.EnableDevTools = false;
+
+        if (args is WindowsWebView2EnvironmentRequestedEventArgs webView2)
+            webView2.IsInPrivateModeEnabled = true;
+    }
+
+    private async void OnNavigationStarted(object? sender, WebViewNavigationStartingEventArgs args)
+    {
+        var url = args.Request;
+        if (url is null || _loginDialog is null)
             return;
 
-        // Reset existing browser cookies if the user is attempting to log in (again)
         if (
             string.Equals(
-                args.Url?.AbsoluteUri,
+                url.AbsoluteUri,
                 LoginPageUri.AbsoluteUri,
                 StringComparison.OrdinalIgnoreCase
             )
         )
         {
-            _coreWebView2.CookieManager.DeleteAllCookies();
+            await ClearCookiesAsync();
         }
+    }
 
-        // Extract the cookies after being redirected to the home page (i.e., after logging in)
+    private async void OnNavigationCompleted(
+        object? sender,
+        WebViewNavigationCompletedEventArgs args
+    )
+    {
+        var url = args.Request;
+        if (url is null || _loginDialog is null || DataContext.IsAuthenticated)
+            return;
+
         if (
-            args.Url is { } url
-            && string.Equals(url.Scheme, HomePageUri.Scheme, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(url.Host, HomePageUri.Host, StringComparison.OrdinalIgnoreCase)
+            !string.Equals(url.Scheme, HomePageUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(url.Host, HomePageUri.Host, StringComparison.OrdinalIgnoreCase)
         )
-        {
-            var cookies = await _coreWebView2!.CookieManager.GetCookiesAsync(url.AbsoluteUri);
-            DataContext.Cookies = cookies.Select(c => c.ToSystemNetCookie()).ToArray();
-        }
+            return;
+
+        await Task.Delay(500);
+
+        var cookieManager = _loginDialog?.TryGetCookieManager();
+        if (cookieManager is null)
+            return;
+
+        var cookies = await cookieManager.GetCookiesAsync();
+        if (cookies.Count == 0)
+            return;
+
+        DataContext.Cookies = cookies.ToArray();
+        if (DataContext.IsAuthenticated)
+            CloseLoginDialog();
+    }
+
+    private async Task ClearCookiesAsync()
+    {
+        var cookieManager = _loginDialog?.TryGetCookieManager();
+        if (cookieManager is null)
+            return;
+
+        foreach (var cookie in await cookieManager.GetCookiesAsync())
+            cookieManager.DeleteCookie(cookie);
     }
 }

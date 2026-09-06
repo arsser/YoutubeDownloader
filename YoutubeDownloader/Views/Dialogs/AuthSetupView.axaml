@@ -56,7 +56,7 @@
                         Theme="{DynamicResource MaterialFlatButton}" />
                 </StackPanel>
 
-                <!--  Placeholder  -->
+                <!--  Placeholder while the native login window is open  -->
                 <TextBlock
                     Margin="16"
                     HorizontalAlignment="Center"
@@ -64,14 +64,6 @@
                     FontSize="18"
                     IsVisible="{Binding !IsAuthenticated}"
                     Text="{Binding LocalizationManager.LoadingText}" />
-
-                <!--  Browser  -->
-                <WebView
-                    x:Name="WebBrowser"
-                    IsVisible="{Binding !IsAuthenticated}"
-                    Loaded="WebBrowser_OnLoaded"
-                    NavigationStarting="WebBrowser_OnNavigationStarting"
-                    WebViewCreated="WebBrowser_OnWebViewCreated" />
             </Panel>
         </Border>
 
